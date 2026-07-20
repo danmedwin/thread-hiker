@@ -13,13 +13,13 @@
     opacity: 0; transition: opacity 1s; }
   body.playing #title { opacity: 1; }
   #title b { font-weight: 700; } #title span { opacity: .45; }
-  #controls { bottom: 16px; right: 18px; font-size: 12px; opacity: 0; text-align: right; line-height: 1.7;
+  #credit { top: 40px; left: 18px; font-size: 11px; opacity: 0; text-align: left; line-height: 1.6;
+    transition: opacity 1s; }
+  body.playing #credit { opacity: .45; }
+  #controls { top: 82px; left: 18px; font-size: 12px; opacity: 0; text-align: left; line-height: 1.7;
     transition: opacity 1s; }
   body.playing #controls { opacity: .55; }
   body.touch #controls { display: none; }
-  #credit { top: 14px; right: 18px; font-size: 11px; opacity: 0; text-align: right; line-height: 1.6;
-    transition: opacity 1s; }
-  body.playing #credit { opacity: .45; }
 
   /* splash */
   #splash { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
@@ -50,7 +50,7 @@
 </style>
 </head>
 <body>
-<div class="hud" id="title"><b>Thread Hiker</b> · Passages &nbsp;<span>v0.21</span></div>
+<div class="hud" id="title"><b>Thread Hiker</b> · Passages &nbsp;<span>v0.22</span></div>
 <div class="hud" id="credit">after “Passages Series” (2026)<br>fiber art by Steve Medwin</div>
 <div class="hud" id="controls">W / S walk &nbsp;·&nbsp; A / D turn &nbsp;·&nbsp; M map</div>
 <div id="splash">

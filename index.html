@@ -34,18 +34,14 @@
     animation: breathe 2.6s ease-in-out infinite; }
   @keyframes breathe { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
 
-  /* touch controls */
-  #dpad { position: fixed; left: 20px; bottom: 20px; width: 158px; height: 158px;
+  /* touch controls — one analog stick, circle within a circle */
+  #stick { position: fixed; left: 22px; bottom: 22px; width: 140px; height: 140px;
+    border-radius: 50%; background: #1e1c1a12; border: 1.5px solid #1e1c1a2b;
     display: none; touch-action: none; z-index: 5; }
-  body.touch.playing #dpad { display: block; }
-  #dpad .arrow { position: absolute; width: 50px; height: 50px; border-radius: 14px;
-    background: #1e1c1a1c; display: flex; align-items: center; justify-content: center;
-    font-size: 18px; color: #1e1c1a; pointer-events: none; }
-  #dpad .arrow.on { background: #1e1c1a44; }
-  #dpad .up    { left: 54px; top: 0; }
-  #dpad .down  { left: 54px; bottom: 0; }
-  #dpad .left  { left: 0; top: 54px; }
-  #dpad .right { right: 0; top: 54px; }
+  body.touch.playing #stick { display: block; }
+  #nub { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px;
+    border-radius: 50%; background: #1e1c1a3a; transform: translate(-50%, -50%); }
+  #nub.recenter { transition: transform .15s ease-out; }
   #mapbtn { position: fixed; right: 20px; bottom: 20px; width: 50px; height: 50px;
     border-radius: 50%; background: #1e1c1a1c; color: #1e1c1a; display: none;
     align-items: center; justify-content: center; font-size: 11px; letter-spacing: .1em;
@@ -54,7 +50,7 @@
 </style>
 </head>
 <body>
-<div class="hud" id="title"><b>Thread Hiker</b> · Passages &nbsp;<span>v0.20</span></div>
+<div class="hud" id="title"><b>Thread Hiker</b> · Passages &nbsp;<span>v0.21</span></div>
 <div class="hud" id="credit">after “Passages Series” (2026)<br>fiber art by Steve Medwin</div>
 <div class="hud" id="controls">W / S walk &nbsp;·&nbsp; A / D turn &nbsp;·&nbsp; M map</div>
 <div id="splash">
@@ -63,10 +59,7 @@
   <p class="cred">fiber art by Steve Medwin &nbsp;·&nbsp; medwinfiberart.com</p>
   <p class="go">press any key or tap to begin</p>
 </div>
-<div id="dpad">
-  <div class="arrow up">▲</div><div class="arrow down">▼</div>
-  <div class="arrow left">◀</div><div class="arrow right">▶</div>
-</div>
+<div id="stick"><div id="nub"></div></div>
 <div id="mapbtn">map</div>
 
 <script type="importmap">{ "imports": { "three": "./three.module.js" } }</script>
@@ -174,7 +167,7 @@ scene.add(mat);
 
 // shadowbox frame around the piece — from above it reads as the framed artwork
 {
-  const frameMat = new THREE.MeshStandardMaterial({ color: 0x231e18, roughness: 0.55 });
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0xa9a49b, roughness: 0.62 });
   const T = 2.4, HGT = 7, INNER = 54;
   const beams = [
     [INNER + T / 2, 0, T, (INNER + T) * 2],
@@ -356,7 +349,8 @@ scene.add(marker);
 // ---------- movement ----------
 const WALK = 3.8;
 const BACK = 2.6;
-const TURN = 2.6;
+const TURN = 2.2;
+const TURN_TOUCH = 1.6;   // max stick turn rate, with expo for fine control
 const MAXLAT = 0.52;
 const STRIDE = 1.6;
 
@@ -412,40 +406,49 @@ addEventListener('keyup', ev => {
   if (k === 'd' || k === 'arrowright') keys.right = false;
 });
 
-// touch: d-pad (one thumb — verticals walk, horizontals turn, diagonals do both)
+// touch: analog stick (circle within a circle — vertical walks, horizontal turns)
 const isTouch = matchMedia('(pointer: coarse)').matches;
 if (isTouch) document.body.classList.add('touch');
-const dpad = document.getElementById('dpad');
-const arrows = {
-  up: dpad.querySelector('.up'), down: dpad.querySelector('.down'),
-  left: dpad.querySelector('.left'), right: dpad.querySelector('.right'),
-};
-let dpadPointer = null;
-function dpadApply(ev) {
-  const r = dpad.getBoundingClientRect();
-  const dx = (ev.clientX - (r.left + r.width / 2)) / (r.width / 2);
-  const dy = (ev.clientY - (r.top + r.height / 2)) / (r.height / 2);
-  keys.fwd = dy < -0.22; keys.back = dy > 0.22;
-  keys.left = dx < -0.22; keys.right = dx > 0.22;
-  arrows.up.classList.toggle('on', keys.fwd);
-  arrows.down.classList.toggle('on', keys.back);
-  arrows.left.classList.toggle('on', keys.left);
-  arrows.right.classList.toggle('on', keys.right);
+const stick = document.getElementById('stick');
+const nub = document.getElementById('nub');
+const joy = { x: 0, y: 0, active: false };
+let stickPointer = null;
+function stickApply(ev) {
+  const r = stick.getBoundingClientRect();
+  let dx = (ev.clientX - (r.left + r.width / 2)) / (r.width / 2);
+  let dy = (ev.clientY - (r.top + r.height / 2)) / (r.height / 2);
+  const m = Math.hypot(dx, dy);
+  if (m > 1) { dx /= m; dy /= m; }
+  joy.x = dx; joy.y = dy; joy.active = true;
+  nub.style.transform =
+    `translate(calc(-50% + ${dx * r.width * 0.32}px), calc(-50% + ${dy * r.height * 0.32}px))`;
 }
-function dpadClear() {
-  dpadPointer = null;
-  keys.fwd = keys.back = keys.left = keys.right = false;
-  for (const a of Object.values(arrows)) a.classList.remove('on');
+function stickClear() {
+  stickPointer = null;
+  joy.x = joy.y = 0; joy.active = false;
+  nub.classList.add('recenter');
+  nub.style.transform = 'translate(-50%, -50%)';
+  setTimeout(() => nub.classList.remove('recenter'), 180);
 }
-dpad.addEventListener('pointerdown', ev => {
-  dpadPointer = ev.pointerId;
-  try { dpad.setPointerCapture(ev.pointerId); } catch {}
-  dpadApply(ev);
+stick.addEventListener('pointerdown', ev => {
+  stickPointer = ev.pointerId;
+  try { stick.setPointerCapture(ev.pointerId); } catch {}
+  stickApply(ev);
   ev.preventDefault(); ev.stopPropagation();
 });
-dpad.addEventListener('pointermove', ev => { if (ev.pointerId === dpadPointer) dpadApply(ev); });
-dpad.addEventListener('pointerup', ev => { if (ev.pointerId === dpadPointer) dpadClear(); });
-dpad.addEventListener('pointercancel', ev => { if (ev.pointerId === dpadPointer) dpadClear(); });
+stick.addEventListener('pointermove', ev => { if (ev.pointerId === stickPointer) stickApply(ev); });
+stick.addEventListener('pointerup', ev => { if (ev.pointerId === stickPointer) stickClear(); });
+stick.addEventListener('pointercancel', ev => { if (ev.pointerId === stickPointer) stickClear(); });
+
+// iOS: swallow double-tap and pinch zoom — an accidental zoom has no way back
+let lastTapT = 0;
+document.addEventListener('touchend', ev => {
+  const now = Date.now();
+  if (now - lastTapT < 350) ev.preventDefault();
+  lastTapT = now;
+}, { passive: false });
+document.addEventListener('gesturestart', ev => ev.preventDefault());
+document.addEventListener('dblclick', ev => ev.preventDefault());
 document.getElementById('mapbtn').addEventListener('pointerdown', ev => {
   if (mode === 'play') mapMode = !mapMode;
   ev.preventDefault(); ev.stopPropagation();
@@ -536,7 +539,7 @@ function makeTargets() {
 }
 makeTargets();
 
-const post = { focusY: 0.5, maxBlur: 7.5 };   // eased toward per-mode targets
+const post = { focusY: 0.5, maxBlur: 0 };   // eased toward per-mode targets
 function render() {
   blurH.uniforms.focusY.value = blurV.uniforms.focusY.value = post.focusY;
   blurH.uniforms.maxBlur.value = blurV.uniforms.maxBlur.value = post.maxBlur;
@@ -564,7 +567,7 @@ const camRay = new THREE.Raycaster();
 let camInit = false;
 const clock = new THREE.Clock();
 
-window.POC = { st, keys, edges, surfaceAt,
+window.POC = { st, keys, joy, edges, surfaceAt,
   get mapMode() { return mapMode; }, set mapMode(v) { mapMode = v; },
   get mode() { return mode; },
   begin: beginDive,
@@ -581,11 +584,14 @@ function update(dt) {
   if (inPlay) {
     if (keys.left) st.yaw += TURN * dt;
     if (keys.right) st.yaw -= TURN * dt;
+    if (joy.active) st.yaw -= joy.x * Math.abs(joy.x) * TURN_TOUCH * dt;
   }
   const fx = Math.sin(st.yaw), fz = Math.cos(st.yaw);
 
   if (inPlay) {
-    const want = keys.fwd ? WALK : (keys.back ? -BACK : 0);
+    let want = keys.fwd ? WALK : (keys.back ? -BACK : 0);
+    if (joy.active && Math.abs(joy.y) > 0.15)
+      want = -joy.y * (joy.y < 0 ? WALK : BACK);   // analog: partial deflection walks slower
     st.speed += (want - st.speed) * Math.min(1, dt * 8);
     sp = Math.abs(st.speed) < 0.05 ? 0 : st.speed;
   } else st.speed = 0;
@@ -593,7 +599,8 @@ function update(dt) {
   st.onEdgeTime += dt;
 
   function applyCarry(t, along) {
-    if (keys.left || keys.right || st.onEdgeTime <= 0.5 || t.e !== st.onEdge) return;
+    if (keys.left || keys.right || (joy.active && Math.abs(joy.x) > 0.15) ||
+        st.onEdgeTime <= 0.5 || t.e !== st.onEdge) return;
     const sgn = along < 0 ? -1 : 1;
     const targetYaw = Math.atan2(t.tx * sgn, t.tz * sgn);
     let dy = ((targetYaw - st.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -690,8 +697,8 @@ function update(dt) {
     camera.position.copy(diveFrom);
     camera.lookAt(0, 0, 0);
     smoothLook.set(0, 0, 0);
-    post.focusY += (0.5 - post.focusY) * Math.min(1, dt * 2);
-    post.maxBlur += (7.5 - post.maxBlur) * Math.min(1, dt * 2);
+    post.focusY = 0.5;
+    post.maxBlur = 0;          // the artwork shows crisp; blur arrives with the dive
   } else if (mode === 'dive') {
     diveT = Math.min(1, diveT + dt / 4.2);
     const s = diveT * diveT * (3 - 2 * diveT);
@@ -705,8 +712,8 @@ function update(dt) {
       a * a * diveFrom.z + 2 * a * s * diveMid.z + s * s * tmp.z);
     diveLook.set(0, 0, 0).lerp(tmp2, s);
     camera.lookAt(diveLook);
-    post.focusY += (0.40 - post.focusY) * Math.min(1, dt * 1.2);
-    post.maxBlur += (3.2 - post.maxBlur) * Math.min(1, dt * 1.2);
+    post.focusY = 0.5 + (0.40 - 0.5) * s;   // tilt-shift fades in as we descend
+    post.maxBlur = 3.2 * s;
     if (diveT >= 1) {
       mode = 'play';
       camera.position.copy(tmp);
@@ -722,8 +729,8 @@ function update(dt) {
     camera.position.lerp(camPos, k);
     smoothLook.lerp(camTarget, k);
     camera.lookAt(smoothLook);
-    post.focusY += (0.5 - post.focusY) * Math.min(1, dt * 2);
-    post.maxBlur += (7.5 - post.maxBlur) * Math.min(1, dt * 2);
+    post.focusY += (0.5 - post.focusY) * Math.min(1, dt * 3);
+    post.maxBlur += (0 - post.maxBlur) * Math.min(1, dt * 3);   // map stays readable
   } else {
     camPos.set(st.pos.x - fx * 9.4, st.pos.y + 4.4, st.pos.z - fz * 9.4);
     camTarget.set(st.pos.x + fx * 5.5, st.pos.y + 2.0, st.pos.z + fz * 5.5);
